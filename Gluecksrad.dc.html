@@ -94,10 +94,13 @@ window.FAIRGROUND_CONFIG = {
               </sc-if>
             </div>
           </sc-for>
+          <sc-if value="{{ noAnswers }}" hint-placeholder-val="{{ false }}">
+            <div style="text-align:center;font-weight:700;font-size:14px;color:#a8977a;padding:14px 6px;">Noch keine Optionen — füge unten welche hinzu. 👇</div>
+          </sc-if>
         </div>
 
         <div style="display:flex;gap:8px;margin-top:14px;">
-          <input value="{{ draft }}" onInput="{{ onDraftChange }}" onKeyDown="{{ onDraftKey }}" placeholder="Neue Antwort…" style="flex:1;min-width:0;border:2px solid #e6d8bf;border-radius:11px;padding:9px 12px;font-family:Nunito;font-weight:700;font-size:15px;color:#20120a;outline:none;background:#fffdf7;" />
+          <input value="{{ draft }}" onInput="{{ onDraftChange }}" onKeyDown="{{ onDraftKey }}" placeholder="Neue Option…" style="flex:1;min-width:0;border:2px solid #e6d8bf;border-radius:11px;padding:9px 12px;font-family:Nunito;font-weight:700;font-size:15px;color:#20120a;outline:none;background:#fffdf7;" />
           <button onClick="{{ onAddAnswer }}" style="border:none;border-radius:11px;padding:0 16px;background:#c0392b;color:#fff;font-family:Bungee,cursive;font-size:13px;letter-spacing:.5px;cursor:pointer;">Add</button>
         </div>
       </div>
@@ -273,11 +276,7 @@ class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.palette = ['#E63946','#F77F00','#FCBF49','#06A77D','#118AB2','#3A86FF','#8338EC','#FF6392','#2EC4B6','#9BC53D','#EF476F','#FFB703'];
-    const seed = [
-      { id: 'a1', label: 'Pizza', votes: 3, color: this.palette[0] },
-      { id: 'a2', label: 'Pasta', votes: 2, color: this.palette[1] },
-      { id: 'a3', label: 'Salat', votes: 7, color: this.palette[2] },
-    ];
+    const seed = [];
     this.colorCount = seed.length;
     this.state = {
       question: '',
@@ -820,6 +819,7 @@ class Component extends DCLogic {
         };
       }),
       totalVotes: total,
+      noAnswers: s.answers.length === 0,
 
       draft: s.draft,
       onDraftChange: (e) => this.setState({ draft: e.target.value }),
