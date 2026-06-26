@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;0,900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================
+   SUPABASE-KONFIGURATION  (Live-Voting / Level 3)
+   Trage hier die Projekt-URL und den public "anon"-Key ein.
+   Beide Felder leer  ->  rein lokaler Modus (Level 1, kein Sync).
+   Anleitung: siehe README.md
+   ============================================================ */
+window.FAIRGROUND_CONFIG = {
+  url: "",      // z. B. "https://abcdefgh.supabase.co"
+  anonKey: ""   // public anon key
+};
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  @keyframes twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes popin { 0% { transform: scale(0.7); opacity: 0; } 60% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
+  @keyframes hubpulse { 0%, 100% { transform: translate(-50%,-50%) scale(1); } 50% { transform: translate(-50%,-50%) scale(1.07); } }
+  .hub-spinning { animation: hubpulse .55s ease-in-out infinite; }
+  input::placeholder { color: #b9a98a; }
+</style>
+</helmet>
+<div style="min-height:100vh;width:100%;font-family:Nunito,system-ui,sans-serif;background:radial-gradient(120% 90% at 50% -10%, #1a4a5e 0%, #102f3e 45%, #0a1f2a 100%);color:#fff8ec;padding:28px 24px 56px;">
+
+  <button onClick="{{ onOpenShare }}" style="position:fixed;top:18px;left:18px;z-index:45;border:2px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#cfe9e3;border-radius:999px;padding:9px 18px;font-weight:900;font-size:13px;letter-spacing:.5px;cursor:pointer;white-space:nowrap;">🔗 Teilen</button>
+
+  <button onClick="{{ onOpenAdmin }}" style="position:fixed;top:18px;right:18px;z-index:45;border:2px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#cfe9e3;border-radius:999px;padding:9px 18px;font-weight:900;font-size:13px;letter-spacing:.5px;cursor:pointer;white-space:nowrap;">⚙ Admin{{ adminBadge }}</button>
+
+  <!-- HEADER -->
+  <div style="max-width:1180px;margin:0 auto 26px;text-align:center;">
+    <div style="font-family:Bungee,cursive;font-size:42px;letter-spacing:1px;color:#ffd23f;text-shadow:0 3px 0 #c8881f, 0 6px 14px rgba(0,0,0,.5);line-height:1;">GLÜCKS&shy;RAD</div>
+    <div style="display:flex;justify-content:center;margin-top:14px;">
+      <span style="display:inline-flex;align-items:center;gap:8px;background:{{ statusBg }};border:1px solid rgba(255,255,255,.14);color:#cfe9e3;border-radius:999px;padding:6px 14px;font-weight:800;font-size:12px;letter-spacing:.6px;">
+        <span style="width:9px;height:9px;border-radius:50%;flex:none;background:{{ statusDot }};box-shadow:0 0 8px {{ statusDot }};"></span>{{ statusText }}
+      </span>
+    </div>
+  </div>
+
+  <!-- QUESTION CARD -->
+  <div style="max-width:760px;margin:0 auto 30px;background:#fff8ec;border:4px solid #20120a;border-radius:20px;box-shadow:0 10px 0 rgba(0,0,0,.25), 0 18px 36px rgba(0,0,0,.4);padding:18px 22px;">
+    <label style="display:block;font-size:12px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#c0392b;margin-bottom:6px;">Worüber darf das Glücksrad entscheiden?</label>
+    <input value="{{ question }}" onInput="{{ onQuestionChange }}" data-qfield="1" placeholder="z. B. Wann gehen wir ins Freibad?" style="width:100%;border:none;outline:none;background:transparent;font-family:Nunito;font-weight:800;font-size:26px;color:#20120a;line-height:1.25;" />
+  </div>
+
+  <!-- MAIN -->
+  <div style="max-width:1180px;margin:0 auto;display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap;justify-content:center;">
+
+    <!-- LEFT: answers + history -->
+    <div style="flex:0 1 360px;min-width:300px;display:flex;flex-direction:column;gap:22px;">
+
+      <div style="background:#fff8ec;border:4px solid #20120a;border-radius:20px;box-shadow:0 8px 0 rgba(0,0,0,.22), 0 16px 30px rgba(0,0,0,.35);padding:20px;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;">
+          <div style="font-family:Bungee,cursive;font-size:18px;color:#20120a;">Optionen</div>
+          <div style="font-size:13px;font-weight:800;color:#c0392b;">{{ totalVotes }} Stimmen</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          <sc-for list="{{ answersView }}" as="a" hint-placeholder-count="3">
+            <div style="position:relative;display:flex;align-items:center;gap:8px;background:#fffdf7;border:2px solid #e6d8bf;border-radius:13px;padding:8px 10px;">
+              <button onClick="{{ a.onTogglePicker }}" title="Emoji wählen" style="width:34px;height:34px;flex:none;border:2px solid {{ a.pickerBorder }};border-radius:9px;background:#fff;font-size:19px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;">{{ a.emoji }}</button>
+              <input value="{{ a.label }}" onInput="{{ a.onLabel }}" placeholder="Option…" style="flex:1;min-width:0;border:none;border-bottom:2px solid transparent;background:transparent;font-family:Nunito;font-weight:800;font-size:15px;color:#20120a;outline:none;padding:2px 0;" style-focus="border-bottom-color:#e6d8bf;" />
+              <button onClick="{{ a.onMinus }}" aria-label="weniger" style="width:30px;height:30px;flex:none;border:none;border-radius:9px;background:#f0e3c8;color:#20120a;font-size:20px;font-weight:900;cursor:pointer;line-height:1;">−</button>
+              <span style="width:24px;text-align:center;font-family:Bungee,cursive;font-size:16px;color:#20120a;">{{ a.votes }}</span>
+              <button onClick="{{ a.onPlus }}" aria-label="mehr" style="width:30px;height:30px;flex:none;border:none;border-radius:9px;background:#ffd23f;color:#20120a;font-size:20px;font-weight:900;cursor:pointer;line-height:1;">+</button>
+              <button onClick="{{ a.onRemove }}" aria-label="entfernen" style="width:26px;height:30px;flex:none;border:none;background:transparent;color:#bfae90;font-size:18px;font-weight:900;cursor:pointer;line-height:1;">✕</button>
+
+              <sc-if value="{{ a.pickerOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;top:46px;left:0;z-index:20;width:282px;background:#fff8ec;border:3px solid #20120a;border-radius:14px;box-shadow:0 10px 26px rgba(0,0,0,.35);padding:10px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                    <span style="font-size:11px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:#c0392b;">Emoji wählen</span>
+                    <button onClick="{{ a.onAutoEmoji }}" title="Automatisch passend" style="border:none;background:#f0e3c8;color:#20120a;border-radius:8px;padding:3px 9px;font-weight:800;font-size:11px;cursor:pointer;">✨ Auto {{ a.autoEmoji }}</button>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                    <sc-for list="{{ a.emojiChoices }}" as="c" hint-placeholder-count="24">
+                      <button onClick="{{ c.onPick }}" style="width:30px;height:30px;border:none;border-radius:7px;background:{{ c.bg }};font-size:17px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;">{{ c.emoji }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:14px;">
+          <input value="{{ draft }}" onInput="{{ onDraftChange }}" onKeyDown="{{ onDraftKey }}" placeholder="Neue Antwort…" style="flex:1;min-width:0;border:2px solid #e6d8bf;border-radius:11px;padding:9px 12px;font-family:Nunito;font-weight:700;font-size:15px;color:#20120a;outline:none;background:#fffdf7;" />
+          <button onClick="{{ onAddAnswer }}" style="border:none;border-radius:11px;padding:0 16px;background:#c0392b;color:#fff;font-family:Bungee,cursive;font-size:13px;letter-spacing:.5px;cursor:pointer;">Add</button>
+        </div>
+      </div>
+
+      <div style="background:#13323f;border:3px solid #0a1f2a;border-radius:20px;box-shadow:0 8px 22px rgba(0,0,0,.35);padding:18px 20px;">
+        <div style="font-family:Bungee,cursive;font-size:15px;color:#ffd23f;margin-bottom:12px;">Verlauf</div>
+        <sc-if value="{{ hasHistory }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <sc-for list="{{ historyView }}" as="h" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-family:Bungee,cursive;font-size:12px;color:#5e8a94;width:22px;">{{ h.num }}</span>
+                <span style="font-size:18px;line-height:1;flex:none;">{{ h.emoji }}</span>
+                <span style="font-weight:800;font-size:14px;color:#eaf6f3;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ h.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noHistory }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:13px;font-weight:600;color:#5e8a94;">Noch kein Dreh. Leg los! 🎡</div>
+        </sc-if>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: wheel stage -->
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:18px;">
+      <div style="position:relative;width:520px;height:520px;">
+
+        {{ bezelEl }}
+
+        <!-- rotating wheel -->
+        <div ref="{{ wheelGlowRef }}" style="position:absolute;inset:0;border-radius:50%;pointer-events:none;z-index:0;opacity:0;transition:opacity .4s ease;box-shadow:0 0 0 0 rgba(255,210,63,0);"></div>
+
+        <div ref="{{ wheelRef }}" style="position:absolute;left:30px;top:30px;width:460px;height:460px;will-change:transform;transform:rotate(0deg);">
+          <svg viewBox="0 0 480 480" width="460" height="460" style="display:block;filter:drop-shadow(0 4px 8px rgba(0,0,0,.3));">
+            <sc-if value="{{ hasSegments }}" hint-placeholder-val="{{ true }}">
+              <sc-for list="{{ segments }}" as="seg" hint-placeholder-count="3">
+                <path d="{{ seg.d }}" fill="{{ seg.color }}" stroke="#fff8ec" stroke-width="2.5"></path>
+              </sc-for>
+              {{ labelsEl }}
+            </sc-if>
+            <sc-if value="{{ noSegments }}" hint-placeholder-val="{{ false }}">
+              <circle cx="240" cy="240" r="210" fill="#d8c7a6"></circle>
+              <text x="240" y="232" text-anchor="middle" fill="#8a7a5c" style="font-family:Nunito;font-weight:900;font-size:20px;">Stimmen</text>
+              <text x="240" y="258" text-anchor="middle" fill="#8a7a5c" style="font-family:Nunito;font-weight:900;font-size:20px;">hinzufügen</text>
+            </sc-if>
+          </svg>
+        </div>
+
+        <!-- pointer: Kleeblatt -->
+        <div ref="{{ cloverRef }}" style="position:absolute;top:-22px;left:50%;z-index:5;transform-origin:50% 18px;transform:translateX(-50%) rotate(0deg);filter:drop-shadow(0 4px 5px rgba(0,0,0,.5));">
+          <svg width="86" height="104" viewBox="-43 -46 86 104">
+            <path d="M0,2 C 5,22 -3,34 0,52" stroke="#1c5e2e" stroke-width="7" fill="none" stroke-linecap="round"></path>
+            <g fill="#2faf54" stroke="#15331c" stroke-width="3" stroke-linejoin="round">
+              <path d="M0,0 C -19,-13 -21,-42 0,-29 C 21,-42 19,-13 0,0 Z"></path>
+              <path d="M0,0 C -19,-13 -21,-42 0,-29 C 21,-42 19,-13 0,0 Z" transform="rotate(90)"></path>
+              <path d="M0,0 C -19,-13 -21,-42 0,-29 C 21,-42 19,-13 0,0 Z" transform="rotate(180)"></path>
+              <path d="M0,0 C -19,-13 -21,-42 0,-29 C 21,-42 19,-13 0,0 Z" transform="rotate(270)"></path>
+            </g>
+            <circle cx="0" cy="0" r="5.5" fill="#ffd23f" stroke="#15331c" stroke-width="2"></circle>
+          </svg>
+        </div>
+
+        <!-- hub / spin button -->
+        <button onClick="{{ onSpin }}" disabled="{{ spinDisabled }}" class="{{ hubClass }}" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;width:128px;height:128px;border-radius:50%;border:6px solid #fff8ec;background:{{ hubBg }};color:#fff;font-family:Bungee,cursive;font-size:19px;letter-spacing:.5px;cursor:{{ hubCursor }};box-shadow:0 6px 0 rgba(0,0,0,.3), 0 12px 24px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;text-align:center;">{{ hubLabel }}</button>
+
+      </div>
+
+      <button onClick="{{ onToggleSound }}" style="border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#cfe9e3;border-radius:999px;padding:8px 18px;font-weight:800;font-size:13px;letter-spacing:.5px;cursor:pointer;white-space:nowrap;">{{ soundLabel }}</button>
+    </div>
+  </div>
+
+  <!-- RESULT OVERLAY -->
+  <sc-if value="{{ showResult }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ onCloseResult }}" style="position:fixed;inset:0;z-index:50;background:rgba(8,18,24,.62);display:flex;align-items:center;justify-content:center;padding:24px;">
+      <div onClick="{{ stop }}" style="animation:popin .35s cubic-bezier(.2,.9,.3,1.4) both;background:#fff8ec;border:5px solid #20120a;border-radius:26px;box-shadow:0 16px 0 rgba(0,0,0,.25), 0 30px 60px rgba(0,0,0,.5);padding:34px 40px;text-align:center;max-width:420px;width:100%;">
+        <div style="font-size:13px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#c0392b;">Die Entscheidung ist gefallen</div>
+        <div style="font-size:15px;font-weight:700;color:#7a6b4d;margin:6px 0 18px;">{{ resultQuestion }}</div>
+        <div style="display:inline-block;background:{{ resultColor }};color:#fff;font-family:Bungee,cursive;font-size:30px;padding:16px 28px;border-radius:16px;border:3px solid rgba(0,0,0,.18);box-shadow:0 6px 0 rgba(0,0,0,.18);text-shadow:0 2px 6px rgba(0,0,0,.35);word-break:break-word;">{{ resultEmoji }} {{ resultLabel }}</div>
+        <div style="display:flex;gap:12px;margin-top:26px;justify-content:center;">
+          <button onClick="{{ onSpinAgain }}" style="border:none;border-radius:13px;padding:13px 22px;background:#ffd23f;color:#20120a;font-family:Bungee,cursive;font-size:14px;cursor:pointer;box-shadow:0 4px 0 #c8881f;">Nochmal drehen</button>
+          <button onClick="{{ onCloseResult }}" style="border:2px solid #20120a;border-radius:13px;padding:13px 22px;background:transparent;color:#20120a;font-weight:900;font-size:14px;cursor:pointer;">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- SHARE OVERLAY -->
+  <sc-if value="{{ showShare }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ onCloseShare }}" style="position:fixed;inset:0;z-index:55;background:rgba(8,18,24,.7);display:flex;align-items:center;justify-content:center;padding:24px;">
+      <div onClick="{{ stop }}" style="animation:popin .3s cubic-bezier(.2,.9,.3,1.2) both;background:#fff8ec;border:5px solid #20120a;border-radius:24px;box-shadow:0 16px 0 rgba(0,0,0,.25), 0 30px 60px rgba(0,0,0,.5);padding:30px 32px;width:100%;max-width:400px;text-align:center;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <div style="font-family:Bungee,cursive;font-size:21px;color:#20120a;">Mitmachen</div>
+          <button onClick="{{ onCloseShare }}" aria-label="schließen" style="border:none;background:transparent;color:#8a7a5c;font-size:24px;font-weight:900;cursor:pointer;line-height:1;">✕</button>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:#7a6b4d;margin-bottom:18px;text-align:left;">{{ shareHint }}</div>
+
+        <div style="display:flex;justify-content:center;margin-bottom:18px;">
+          <sc-if value="{{ hasQr }}" hint-placeholder-val="{{ true }}">
+            <img src="{{ qrDataUrl }}" alt="QR-Code" width="220" height="220" style="display:block;border:5px solid #20120a;border-radius:16px;background:#fff;image-rendering:pixelated;" />
+          </sc-if>
+          <sc-if value="{{ noQr }}" hint-placeholder-val="{{ false }}">
+            <div style="width:220px;height:220px;border:5px dashed #d8c7a6;border-radius:16px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#a8977a;font-size:14px;">QR-Code wird erstellt…</div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#13323f;border-radius:11px;padding:8px 12px;margin-bottom:10px;">
+          <span style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#7fd0c4;">Raum</span>
+          <span style="font-family:Bungee,cursive;font-size:16px;color:#ffd23f;letter-spacing:1px;">{{ roomCode }}</span>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:#a8977a;word-break:break-all;background:#fffdf7;border:2px solid #e6d8bf;border-radius:11px;padding:9px 12px;margin-bottom:14px;text-align:left;">{{ shareUrl }}</div>
+        <div style="display:flex;gap:10px;">
+          <button onClick="{{ onCopyLink }}" style="flex:1;border:none;border-radius:13px;padding:13px 18px;background:#ffd23f;color:#20120a;font-family:Bungee,cursive;font-size:13px;cursor:pointer;box-shadow:0 4px 0 #c8881f;">{{ copyLabel }}</button>
+          <button onClick="{{ onNewRoom }}" title="Eigenen Raum erstellen" style="border:2px solid #20120a;border-radius:13px;padding:13px 16px;background:transparent;color:#20120a;font-weight:900;font-size:13px;cursor:pointer;white-space:nowrap;">+ Neuer Raum</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ADMIN OVERLAY -->
+  <sc-if value="{{ showAdmin }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ onCloseAdmin }}" style="position:fixed;inset:0;z-index:55;background:rgba(8,18,24,.7);display:flex;align-items:center;justify-content:center;padding:24px;">
+      <div onClick="{{ stop }}" style="animation:popin .3s cubic-bezier(.2,.9,.3,1.2) both;background:#fff8ec;border:5px solid #20120a;border-radius:24px;box-shadow:0 16px 0 rgba(0,0,0,.25), 0 30px 60px rgba(0,0,0,.5);padding:26px 28px;width:100%;max-width:560px;max-height:82vh;display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
+          <div style="font-family:Bungee,cursive;font-size:22px;color:#20120a;">Admin · Verlauf</div>
+          <button onClick="{{ onCloseAdmin }}" aria-label="schließen" style="border:none;background:transparent;color:#8a7a5c;font-size:24px;font-weight:900;cursor:pointer;line-height:1;">✕</button>
+        </div>
+        <div style="font-size:13px;font-weight:700;color:#7a6b4d;margin-bottom:16px;">{{ adminCount }} gespeicherte Entscheidung(en) · alle Fragen &amp; Ergebnisse</div>
+
+        <sc-if value="{{ hasLog }}" hint-placeholder-val="{{ true }}">
+          <div style="overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px;">
+            <sc-for list="{{ logView }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;gap:12px;align-items:flex-start;background:#fffdf7;border:2px solid #e6d8bf;border-radius:13px;padding:11px 13px;">
+                <span style="font-size:22px;line-height:1;flex:none;margin-top:1px;">{{ r.emoji }}</span>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:800;font-size:14px;color:#5a4a30;line-height:1.3;">{{ r.question }}</div>
+                  <div style="font-family:Bungee,cursive;font-size:16px;color:#c0392b;margin-top:3px;">{{ r.label }}</div>
+                </div>
+                <span style="font-size:12px;font-weight:700;color:#a8977a;white-space:nowrap;margin-top:2px;">{{ r.when }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <button onClick="{{ onClearLog }}" style="margin-top:18px;align-self:flex-start;border:2px solid #c0392b;background:transparent;color:#c0392b;border-radius:11px;padding:9px 16px;font-weight:900;font-size:13px;cursor:pointer;">Verlauf löschen</button>
+        </sc-if>
+        <sc-if value="{{ noLog }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:14px;font-weight:600;color:#8a7a5c;padding:24px 0;text-align:center;">Noch keine Entscheidungen gespeichert. Dreh das Rad! 🎡</div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <canvas ref="{{ confettiRef }}" style="position:fixed;inset:0;z-index:60;pointer-events:none;width:100%;height:100%;"></canvas>
+
+  <template id="__bundler_thumbnail">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100" height="100" fill="#102f3e"></rect>
+      <circle cx="50" cy="52" r="20" fill="#f0b53c"></circle>
+      <path d="M50 52 L50 32 A20 20 0 0 1 67 42 Z" fill="#E63946"></path>
+      <path d="M50 52 L67 42 A20 20 0 0 1 63 68 Z" fill="#F77F00"></path>
+      <path d="M50 52 L63 68 A20 20 0 0 1 33 64 Z" fill="#FCBF49"></path>
+      <path d="M50 52 L33 64 A20 20 0 0 1 50 32 Z" fill="#06A77D"></path>
+      <circle cx="50" cy="52" r="6" fill="#fff8ec"></circle>
+      <g fill="#2faf54" stroke="#15331c" stroke-width="1.4">
+        <path d="M50 30 C45 26 44 19 50 22 C56 19 55 26 50 30 Z"></path>
+      </g>
+    </svg>
+  </template>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1180,&quot;height&quot;:880},&quot;spinDurationSec&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:5,&quot;min&quot;:2,&quot;max&quot;:9,&quot;tsType&quot;:&quot;number&quot;},&quot;showWheelLabels&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;bulbTwinkle&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;confettiOn&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.palette = ['#E63946','#F77F00','#FCBF49','#06A77D','#118AB2','#3A86FF','#8338EC','#FF6392','#2EC4B6','#9BC53D','#EF476F','#FFB703'];
+    const seed = [
+      { id: 'a1', label: 'Pizza', votes: 3, color: this.palette[0] },
+      { id: 'a2', label: 'Pasta', votes: 2, color: this.palette[1] },
+      { id: 'a3', label: 'Salat', votes: 7, color: this.palette[2] },
+    ];
+    this.colorCount = seed.length;
+    this.state = {
+      question: '',
+      answers: seed,
+      draft: '',
+      spinning: false,
+      showResult: false,
+      result: null,
+      resultQuestion: '',
+      soundOn: true,
+      log: this.loadLog(),
+      online: false,
+      roomCode: '',
+      showAdmin: false,
+      showShare: false,
+      qrDataUrl: '',
+      shareUrl: '',
+      copied: false,
+      pickerFor: null,
+    };
+    this.clientId = Math.random().toString(36).slice(2);
+    this.cfg = window.FAIRGROUND_CONFIG || {};
+    this.roomCode = this.getRoomFromUrl() || 'main';
+    this._seenResults = {};
+    this.wheelRef = React.createRef();
+    this.wheelGlowRef = React.createRef();
+    this.cloverRef = React.createRef();
+    this.confettiRef = React.createRef();
+    this.rotation = 0;
+    this._segs = [];
+    this._confetti = [];
+    this._confettiRaf = null;
+  }
+
+  componentDidMount() {
+    this.sizeConfetti();
+    this._onResize = () => this.sizeConfetti();
+    window.addEventListener('resize', this._onResize);
+    this.genQR();
+    this.initSync();
+  }
+  genQR(tries) {
+    tries = tries || 0;
+    const url = (window.location && window.location.href) || '';
+    if (window.qrcode) {
+      try {
+        let qr;
+        try { qr = window.qrcode(0, 'M'); qr.addData(url); qr.make(); }
+        catch (e) { qr = window.qrcode(0, 'L'); qr.addData(url); qr.make(); }
+        this.setState({ qrDataUrl: qr.createDataURL(7, 4), shareUrl: url });
+      } catch (e) { this.setState({ shareUrl: url }); }
+    } else if (tries < 40) {
+      setTimeout(() => this.genQR(tries + 1), 100);
+    } else {
+      this.setState({ shareUrl: url });
+    }
+  }
+  componentWillUnmount() {
+    window.removeEventListener('resize', this._onResize);
+    if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._confettiRaf) cancelAnimationFrame(this._confettiRaf);
+  }
+
+  // ---- persistence ----
+  loadLog() {
+    try { return JSON.parse(localStorage.getItem('gluecksrad_log')) || []; }
+    catch (e) { return []; }
+  }
+  saveLog(log) {
+    try { localStorage.setItem('gluecksrad_log', JSON.stringify(log)); } catch (e) {}
+  }
+
+  // ---- supabase live-sync ----
+  getRoomFromUrl() {
+    try { return new URL(window.location.href).searchParams.get('room'); } catch (e) { return null; }
+  }
+  makeCode() {
+    const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 5; i++) s += c[Math.floor(Math.random() * c.length)];
+    return s;
+  }
+  newRoom() {
+    const code = this.makeCode();
+    const u = new URL(window.location.href);
+    u.searchParams.set('room', code);
+    window.location.href = u.toString();
+  }
+  async initSync() {
+    const cfg = this.cfg || {};
+    if (!cfg.url || !cfg.anonKey || !/^https?:\/\//.test(cfg.url)) return; // -> local mode
+    let tries = 0;
+    while ((!window.supabase || !window.supabase.createClient) && tries < 60) {
+      await new Promise(r => setTimeout(r, 100)); tries++;
+    }
+    if (!window.supabase || !window.supabase.createClient) return;
+    try {
+      this.sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+      const code = this.roomCode;
+      const row = await this.ensureRoom(code);
+      if (row) this.applyRoom(row);
+      await this.loadResults(code);
+      this.ch = this.sb.channel('fairground-' + code, { config: { broadcast: { self: false } } });
+      this.ch
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: 'id=eq.' + code }, p => this.applyRoom(p.new))
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'results', filter: 'room_id=eq.' + code }, p => this.addResult(p.new))
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'results', filter: 'room_id=eq.' + code }, () => this.reloadResultsSoon())
+        .on('broadcast', { event: 'spin' }, ({ payload }) => { if (payload && payload.by !== this.clientId) this.runSpinTo(payload.winnerId, false); })
+        .subscribe((status) => { if (status === 'SUBSCRIBED') this.setState({ online: true, roomCode: code }); });
+    } catch (e) { /* stay in local mode */ }
+  }
+  async ensureRoom(code) {
+    const { data, error } = await this.sb.from('rooms').select('*').eq('id', code).maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+    const seed = this.state.answers;
+    const ins = await this.sb.from('rooms').insert({ id: code, question: this.state.question, options: seed }).select().maybeSingle();
+    if (ins.error) throw ins.error;
+    return ins.data || { id: code, question: this.state.question, options: seed };
+  }
+  applyRoom(row) {
+    if (!row) return;
+    const active = document.activeElement;
+    const editingLabel = active && active.tagName === 'INPUT' && active.placeholder === 'Option…';
+    const editingQuestion = active && active.dataset && active.dataset.qfield === '1';
+    const patch = {};
+    if (Array.isArray(row.options) && !editingLabel) patch.answers = row.options;
+    if (typeof row.question === 'string' && !editingQuestion) patch.question = row.question;
+    if (Object.keys(patch).length) this.setState(patch);
+  }
+  pushRoom() {
+    if (!this.online && !this.sb) return;
+    if (!this.sb) return;
+    clearTimeout(this._pushT);
+    this._pushT = setTimeout(() => {
+      this.sb.from('rooms').update({
+        question: this.state.question,
+        options: this.state.answers,
+        updated_at: new Date().toISOString(),
+      }).eq('id', this.roomCode).then(() => {}, () => {});
+    }, 220);
+  }
+  mapResult(r) {
+    return { id: r.id, question: r.question, label: r.label, emoji: r.emoji, color: r.color, ts: r.created_at ? Date.parse(r.created_at) : Date.now() };
+  }
+  async loadResults(code) {
+    const { data } = await this.sb.from('results').select('*').eq('room_id', code).order('created_at', { ascending: false }).limit(300);
+    if (data) {
+      this._seenResults = {};
+      data.forEach(r => { this._seenResults[r.id] = 1; });
+      this.setState({ log: data.map(r => this.mapResult(r)) });
+    }
+  }
+  addResult(r) {
+    if (!r || this._seenResults[r.id]) return;
+    this._seenResults[r.id] = 1;
+    this.setState(s => ({ log: [this.mapResult(r), ...s.log].slice(0, 300) }));
+  }
+  reloadResultsSoon() {
+    clearTimeout(this._reloadT);
+    this._reloadT = setTimeout(() => { if (this.sb) this.loadResults(this.roomCode); }, 200);
+  }
+  insertResult(winner) {
+    if (!this.sb) return;
+    this.sb.from('results').insert({
+      room_id: this.roomCode,
+      question: this.state.question,
+      label: winner.label,
+      emoji: winner.emoji || this.displayEmoji(winner),
+      color: winner.color,
+    }).then(() => {}, () => {});
+  }
+  clearResultsRemote() {
+    if (!this.sb) return;
+    this._seenResults = {};
+    this.sb.from('results').delete().eq('room_id', this.roomCode).then(() => {}, () => {});
+    this.setState({ log: [] });
+  }
+
+  // ---- emoji ----
+  emojiChoices() {
+    return ['🍕','🍝','🥗','🍔','🍣','🌮','🍟','🍲','🍚','🍦','🍰','🍫','☕','🍺','🍷','🥤',
+      '🎬','📺','🎮','⚽','🏀','🎾','🏃','🧘','🏋️','🚴','🎵','💃','📚','✈️','🏖️','🏔️',
+      '🎉','🛍️','😴','🏠','🐶','🐱','🚗','🎯','⭐','🎲','🔥','🍀','🎈','🌈','⚡','🚀',
+      '✅','❌','🤔','💰','🎁','🌸','☀️','❄️'];
+  }
+  getEmoji(label) {
+    const t = (label || '').toLowerCase().trim();
+    if (!t) return this.fallbackEmoji(t);
+    // split into words, keeping german umlauts/ß as word chars
+    const words = t.split(/[^0-9a-zàâäçéèêëîïôöùûüÿñæœß]+/i).filter(Boolean);
+    // a keyword matches if: (phrase) substring; or whole word; or word starts with a >=4-char stem; or a >=5-char stem sits inside a compound word
+    const has = (k) => {
+      if (k.indexOf(' ') >= 0) return t.indexOf(k) >= 0;
+      if (words.indexOf(k) >= 0) return true;
+      if (k.length >= 4 && words.some(w => w.indexOf(k) === 0)) return true;
+      if (k.length >= 5 && words.some(w => w.indexOf(k) >= 0)) return true;
+      return false;
+    };
+    // ordered most-specific first; conflict-prone short stems kept whole-word only;
+    // 'reise' (travel) sits BEFORE 'reis' (rice) so "Reise" never reads as rice
+    const map = [
+      [['pizza'], '🍕'], [['spaghetti', 'spagh', 'pasta', 'nudel', 'nudeln', 'lasagne'], '🍝'],
+      [['sushi', 'maki'], '🍣'], [['taco', 'tacos', 'burrito'], '🌮'],
+      [['döner', 'doener', 'kebab', 'dürüm', 'duerum'], '🥙'], [['burger', 'hamburger', 'cheeseburger'], '🍔'],
+      [['pommes', 'fries', 'fritten'], '🍟'], [['sandwich', 'sandwiches', 'toast', 'baguette'], '🥪'],
+      [['suppe', 'soup', 'eintopf', 'ramen'], '🍲'], [['curry'], '🍛'], [['wrap', 'wraps'], '🌯'],
+      [['brot', 'brötchen', 'broetchen', 'bread', 'semmel'], '🥖'], [['käse', 'kaese', 'cheese'], '🧀'],
+      [['fisch', 'fish', 'lachs', 'thunfisch'], '🐟'], [['steak', 'fleisch', 'rind', 'beef', 'schnitzel'], '🥩'],
+      [['hähnchen', 'haehnchen', 'huhn', 'hühnchen', 'chicken'], '🍗'],
+      [['salat', 'salad', 'salate'], '🥗'], [['popcorn'], '🍿'], [['donut', 'donuts'], '🍩'],
+      [['keks', 'kekse', 'cookie', 'cookies', 'plätzchen', 'plaetzchen'], '🍪'],
+      [['schoko', 'schokolade', 'chocolate', 'praline'], '🍫'], [['kuchen', 'cake', 'torte', 'muffin'], '🍰'],
+      [['eis', 'eisdiele', 'eiscreme', 'gelato', 'ice cream', 'icecream'], '🍦'],
+      [['apfel', 'äpfel', 'apple'], '🍎'], [['banane', 'banana'], '🍌'], [['ei', 'eier', 'egg', 'eggs'], '🥚'],
+      [['kaffee', 'coffee', 'espresso', 'cappuccino', 'cappu', 'latte'], '☕'], [['tee', 'tea', 'chai'], '🍵'],
+      [['bier', 'beer', 'pils'], '🍺'], [['wein', 'wine', 'rotwein', 'weißwein'], '🍷'],
+      [['cocktail', 'cocktails', 'drink', 'drinks'], '🍸'], [['saft', 'juice', 'smoothie', 'limo', 'limonade'], '🥤'],
+      [['wasser', 'water'], '💧'],
+      [['kino', 'film', 'filme', 'movie', 'movies', 'cinema'], '🎬'],
+      [['serie', 'serien', 'netflix', 'fernsehen', 'fernseh', 'tv'], '📺'],
+      [['brettspiel', 'brettspiele', 'puzzle'], '🧩'],
+      [['videospiel', 'gaming', 'zocken', 'zock', 'konsole', 'playstation', 'xbox', 'spielen', 'spiel'], '🎮'],
+      [['fußball', 'fussball', 'soccer', 'football'], '⚽'], [['basketball'], '🏀'], [['tennis'], '🎾'],
+      [['schwimmen', 'schwimm', 'swim', 'swimming', 'pool'], '🏊'],
+      [['joggen', 'jogging', 'jogg', 'laufen', 'lauf', 'running', 'marathon'], '🏃'],
+      [['yoga', 'meditation', 'meditieren', 'medit'], '🧘'],
+      [['gym', 'fitness', 'fitnessstudio', 'training', 'workout', 'krafttraining'], '🏋️'],
+      [['fahrrad', 'radfahren', 'bike', 'biken', 'cycling', 'cycle', 'rad'], '🚴'],
+      [['musik', 'music', 'song', 'songs', 'konzert', 'konzerte'], '🎵'],
+      [['tanzen', 'tanz', 'dance', 'dancing', 'disco', 'club', 'clubbing'], '💃'],
+      [['lesen', 'buch', 'bücher', 'buecher', 'book', 'books', 'roman'], '📚'],
+      [['lernen', 'studieren', 'study', 'hausaufgaben', 'hausaufgabe'], '📖'],
+      [['arbeit', 'arbeiten', 'work', 'büro', 'buero', 'job', 'meeting', 'meetings'], '💼'],
+      [['reise', 'reisen', 'travel', 'urlaub', 'flug', 'fliegen', 'flight'], '✈️'],
+      [['reis', 'rice', 'reisschüssel'], '🍚'],
+      [['strand', 'beach', 'meer', 'baden'], '🏖️'],
+      [['berg', 'berge', 'wandern', 'wanderung', 'hiking', 'hike'], '🏔️'],
+      [['camping', 'campen', 'zelt', 'zelten'], '🏕️'], [['park', 'spazieren', 'spaziergang'], '🌳'],
+      [['party', 'partys', 'feiern', 'feier', 'fest', 'festival'], '🎉'],
+      [['shopping', 'einkaufen', 'einkauf', 'shoppen'], '🛍️'],
+      [['schlafen', 'schlaf', 'sleep', 'bett', 'nickerchen', 'nap'], '😴'],
+      [['restaurant', 'essen gehen', 'auswärts', 'auswaerts'], '🍽️'], [['kneipe', 'pub', 'bar'], '🍻'],
+      [['zuhause', 'zuhaus', 'daheim', 'home'], '🏠'],
+      [['hund', 'hunde', 'dog'], '🐶'], [['katze', 'katzen', 'cat'], '🐱'],
+      [['auto', 'autofahren', 'car'], '🚗'], [['zug', 'bahn', 'train'], '🚆'],
+      [['vielleicht', 'maybe', 'evtl'], '🤔'], [['ja', 'yes', 'jep'], '✅'], [['nein', 'no', 'nope', 'nö'], '❌'],
+      [['geld', 'money', 'sparen', 'budget'], '💰'], [['geschenk', 'geschenke', 'gift', 'present'], '🎁'],
+      [['blume', 'blumen', 'flower'], '🌸'], [['sonne', 'sonnig', 'sommer', 'sun'], '☀️'],
+      [['regen', 'regnerisch', 'rain'], '🌧️'], [['schnee', 'snow', 'winter'], '❄️'],
+    ];
+    for (const [keys, emo] of map) { if (keys.some(has)) return emo; }
+    return this.fallbackEmoji(t);
+  }
+  fallbackEmoji(t) {
+    const pool = ['🎯', '⭐', '🎲', '🔥', '💫', '🍀', '🎈', '🌈', '⚡', '🎪', '🎨', '🚀'];
+    let h = 0;
+    for (let i = 0; i < t.length; i++) h = (h + t.charCodeAt(i)) % pool.length;
+    return pool[h];
+  }
+
+  // ---- geometry ----
+  point(a, r) {
+    const rad = (a * Math.PI) / 180;
+    return { x: 240 + r * Math.sin(rad), y: 240 - r * Math.cos(rad) };
+  }
+  computeSegments(answers) {
+    const active = answers.filter(a => a.votes > 0);
+    const total = active.reduce((s, a) => s + a.votes, 0);
+    if (total <= 0) return [];
+    const r = 210, lr = 134;
+    let acc = 0;
+    return active.map(a => {
+      const span = (a.votes / total) * 360;
+      const start = acc, end = acc + span; acc = end;
+      const p0 = this.point(start, r), p1 = this.point(end, r);
+      const large = span > 180 ? 1 : 0;
+      const d = `M240 240 L${p0.x.toFixed(2)} ${p0.y.toFixed(2)} A${r} ${r} 0 ${large} 1 ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} Z`;
+      const mid = (start + end) / 2;
+      const lp = this.point(mid, lr);
+      let rot = mid - 90;
+      if (mid > 90 && mid < 270) rot += 180;
+      return {
+        id: a.id, label: a.label, color: a.color, votes: a.votes, emoji: this.displayEmoji(a),
+        start, end, span, mid, d,
+        lx: +lp.x.toFixed(2), ly: +lp.y.toFixed(2),
+        labelTransform: `rotate(${rot.toFixed(2)} ${lp.x.toFixed(2)} ${lp.y.toFixed(2)})`,
+      };
+    });
+  }
+  segIndexAtTop(rot) {
+    const a = ((360 - (rot % 360)) % 360 + 360) % 360;
+    for (let i = 0; i < this._segs.length; i++) {
+      if (a >= this._segs[i].start && a < this._segs[i].end) return i;
+    }
+    return -1;
+  }
+
+  // ---- sound ----
+  ensureAudio() {
+    if (!this.actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) this.actx = new AC();
+    }
+    if (this.actx && this.actx.state === 'suspended') this.actx.resume();
+  }
+  flickClover() {
+    const el = this.cloverRef.current;
+    if (!el) return;
+    el.style.transition = 'none';
+    el.style.transform = 'translateX(-50%) rotate(-15deg)';
+    if (this._flickT) clearTimeout(this._flickT);
+    this._flickRaf = requestAnimationFrame(() => {
+      el.style.transition = 'transform .22s cubic-bezier(.2,1.5,.4,1)';
+      el.style.transform = 'translateX(-50%) rotate(0deg)';
+    });
+  }
+  tick() {
+    this.flickClover();
+    if (!this.state.soundOn || !this.actx) return;
+    const t = this.actx.currentTime;
+    const o = this.actx.createOscillator(), g = this.actx.createGain();
+    o.type = 'square';
+    o.frequency.value = 620 + Math.random() * 380;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    o.connect(g); g.connect(this.actx.destination);
+    o.start(t); o.stop(t + 0.06);
+  }
+  playWin() {
+    if (!this.state.soundOn || !this.actx) return;
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((f, i) => {
+      const t = this.actx.currentTime + i * 0.12;
+      const o = this.actx.createOscillator(), g = this.actx.createGain();
+      o.type = 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.14, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+      o.connect(g); g.connect(this.actx.destination);
+      o.start(t); o.stop(t + 0.34);
+    });
+  }
+
+  // ---- confetti ----
+  sizeConfetti() {
+    const c = this.confettiRef.current; if (!c) return;
+    const dpr = window.devicePixelRatio || 1;
+    c.width = window.innerWidth * dpr;
+    c.height = window.innerHeight * dpr;
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  launchConfetti() {
+    const W = window.innerWidth;
+    const cols = this.palette;
+    for (let i = 0; i < 160; i++) {
+      this._confetti.push({
+        x: W / 2 + (Math.random() - 0.5) * 200,
+        y: -20 - Math.random() * 200,
+        vx: (Math.random() - 0.5) * 9,
+        vy: 2 + Math.random() * 5,
+        size: 6 + Math.random() * 8,
+        rot: Math.random() * 360,
+        vr: (Math.random() - 0.5) * 18,
+        color: cols[(Math.random() * cols.length) | 0],
+      });
+    }
+    if (!this._confettiRaf) this.drawConfetti();
+  }
+  drawConfetti() {
+    const c = this.confettiRef.current;
+    if (!c) { this._confettiRaf = null; return; }
+    const ctx = c.getContext('2d');
+    const H = window.innerHeight;
+    ctx.clearRect(0, 0, c.width, c.height);
+    this._confetti = this._confetti.filter(p => p.y < H + 40);
+    this._confetti.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.18; p.vx *= 0.99; p.rot += p.vr;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate((p.rot * Math.PI) / 180);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+      ctx.restore();
+    });
+    if (this._confetti.length > 0) {
+      this._confettiRaf = requestAnimationFrame(() => this.drawConfetti());
+    } else {
+      ctx.clearRect(0, 0, c.width, c.height);
+      this._confettiRaf = null;
+    }
+  }
+
+  // ---- answer ops ----
+  setVotes(id, delta) {
+    this.setState(s => ({
+      answers: s.answers.map(a => a.id === id ? { ...a, votes: Math.max(0, a.votes + delta) } : a),
+    }), () => this.pushRoom());
+  }
+  removeAnswer(id) {
+    this.setState(s => ({ answers: s.answers.filter(a => a.id !== id), pickerFor: s.pickerFor === id ? null : s.pickerFor }), () => this.pushRoom());
+  }
+  renameAnswer(id, label) {
+    this.setState(s => ({ answers: s.answers.map(a => a.id === id ? { ...a, label } : a) }), () => this.pushRoom());
+  }
+  setEmoji(id, emoji) {
+    this.setState(s => ({ answers: s.answers.map(a => a.id === id ? { ...a, emoji } : a), pickerFor: null }), () => this.pushRoom());
+  }
+  clearEmoji(id) {
+    this.setState(s => ({ answers: s.answers.map(a => a.id === id ? { ...a, emoji: null } : a), pickerFor: null }), () => this.pushRoom());
+  }
+  togglePicker(id) {
+    this.setState(s => ({ pickerFor: s.pickerFor === id ? null : id }));
+  }
+  displayEmoji(a) {
+    return a.emoji || this.getEmoji(a.label);
+  }
+  addAnswer() {
+    const t = (this.state.draft || '').trim();
+    if (!t) return;
+    const color = this.palette[this.colorCount++ % this.palette.length];
+    this.setState(s => ({
+      answers: [...s.answers, { id: 'a' + Date.now() + Math.floor(Math.random() * 1000), label: t, votes: 1, color }],
+      draft: '',
+    }), () => this.pushRoom());
+  }
+
+  // ---- spin ----
+  spin() {
+    if (this.state.spinning) return;
+    const segs = this.computeSegments(this.state.answers);
+    if (segs.length < 2) return;
+    const total = segs.reduce((s, x) => s + x.votes, 0);
+    let r = Math.random() * total, winner = segs[segs.length - 1];
+    for (const s of segs) { if (r < s.votes) { winner = s; break; } r -= s.votes; }
+    if (this.online && this.ch) {
+      try { this.ch.send({ type: 'broadcast', event: 'spin', payload: { winnerId: winner.id, by: this.clientId } }); } catch (e) {}
+    }
+    this.runSpinTo(winner.id, true);
+  }
+  runSpinTo(winnerId, initiator) {
+    if (this.state.spinning) return;
+    const segs = this.computeSegments(this.state.answers);
+    if (segs.length < 1) return;
+    const winner = segs.find(x => x.id === winnerId) || segs[0];
+    this._segs = segs;
+    this.ensureAudio();
+
+    const chosenAngle = winner.start + (0.18 + 0.64 * Math.random()) * winner.span;
+    const targetMod = ((360 - chosenAngle) % 360 + 360) % 360;
+    const turns = 6;
+    const start = this.rotation;
+    const target = Math.ceil(start / 360) * 360 + turns * 360 + targetMod;
+    const dur = (this.props.spinDurationSec || 5) * 1000;
+    const t0 = performance.now();
+    this._lastTop = this.segIndexAtTop(start);
+
+    this.setState({ spinning: true, showResult: false });
+    const glow = this.wheelGlowRef.current;
+    if (glow) { glow.style.opacity = '1'; glow.style.boxShadow = '0 0 60px 22px rgba(255,210,63,.7)'; }
+
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - t, 4);
+      const rot = start + (target - start) * e;
+      this.rotation = rot;
+      if (this.wheelRef.current) this.wheelRef.current.style.transform = `rotate(${rot}deg)`;
+      const top = this.segIndexAtTop(rot);
+      if (top !== this._lastTop) { this.tick(); this._lastTop = top; }
+      if (t < 1) {
+        this._raf = requestAnimationFrame(step);
+      } else {
+        this.finishSpin(winner, initiator);
+      }
+    };
+    this._raf = requestAnimationFrame(step);
+  }
+  finishSpin(winner, initiator) {
+    const glow = this.wheelGlowRef.current;
+    if (glow) { glow.style.opacity = '0'; glow.style.boxShadow = '0 0 0 0 rgba(255,210,63,0)'; }
+    this.playWin();
+    if (this.props.confettiOn !== false) this.launchConfetti();
+    if (this.online) {
+      // results table is the shared source of truth; only the initiator writes
+      if (initiator) this.insertResult(winner);
+      this.setState({ spinning: false, showResult: true, result: winner, resultQuestion: this.state.question });
+    } else {
+      this.setState(s => {
+        const record = { question: s.question, label: winner.label, color: winner.color, emoji: winner.emoji, ts: Date.now() };
+        const log = [record, ...s.log].slice(0, 300);
+        this.saveLog(log);
+        return { spinning: false, showResult: true, result: winner, resultQuestion: s.question, log };
+      });
+    }
+  }
+
+  renderVals() {
+    const s = this.state;
+    const segs = this.computeSegments(s.answers);
+    this._segs = segs;
+    const total = s.answers.reduce((a, x) => a + x.votes, 0);
+    const showLabels = this.props.showWheelLabels !== false;
+    const spinDisabled = s.spinning || segs.length < 2;
+
+    return {
+      question: s.question,
+      onQuestionChange: (e) => this.setState({ question: e.target.value }, () => this.pushRoom()),
+
+      online: s.online,
+      roomCode: s.roomCode || this.roomCode,
+      statusText: s.online ? ('Live · Raum ' + (s.roomCode || this.roomCode)) : 'Lokaler Modus',
+      statusDot: s.online ? '#2faf54' : '#9aa7ab',
+      statusBg: s.online ? 'rgba(47,175,84,.16)' : 'rgba(255,255,255,.06)',
+      onNewRoom: () => this.newRoom(),
+      shareHint: s.online
+        ? 'Scanne den Code oder teile den Link — alle im selben Raum stimmen gemeinsam ab. 🍀'
+        : 'Lokaler Modus: Der Link öffnet das Rad als eigene Kopie (kein geteiltes Voting). Für Live-Abstimmung Supabase einrichten — siehe README.',
+
+      answersView: s.answers.map(a => {
+        const auto = this.getEmoji(a.label);
+        const cur = this.displayEmoji(a);
+        const open = s.pickerFor === a.id;
+        return {
+          id: a.id, label: a.label, votes: a.votes, color: a.color, emoji: cur,
+          autoEmoji: auto,
+          pickerOpen: open,
+          pickerBorder: open ? '#c0392b' : '#e6d8bf',
+          onTogglePicker: () => this.togglePicker(a.id),
+          onAutoEmoji: () => this.clearEmoji(a.id),
+          emojiChoices: this.emojiChoices().map(em => ({
+            emoji: em,
+            bg: em === cur ? '#ffd23f' : '#fffdf7',
+            onPick: () => this.setEmoji(a.id, em),
+          })),
+          onLabel: (e) => this.renameAnswer(a.id, e.target.value),
+          onPlus: () => this.setVotes(a.id, 1),
+          onMinus: () => this.setVotes(a.id, -1),
+          onRemove: () => this.removeAnswer(a.id),
+        };
+      }),
+      totalVotes: total,
+
+      draft: s.draft,
+      onDraftChange: (e) => this.setState({ draft: e.target.value }),
+      onDraftKey: (e) => { if (e.key === 'Enter') this.addAnswer(); },
+      onAddAnswer: () => this.addAnswer(),
+
+      segments: segs,
+      labelsEl: this.buildLabels(showLabels ? segs : []),
+      hasSegments: segs.length > 0,
+      noSegments: segs.length === 0,
+
+      bezelEl: this.buildBezel(),
+      wheelRef: this.wheelRef,
+      wheelGlowRef: this.wheelGlowRef,
+      cloverRef: this.cloverRef,
+      confettiRef: this.confettiRef,
+      hubClass: s.spinning ? 'hub-spinning' : '',
+
+      onSpin: () => this.spin(),
+      spinning: s.spinning,
+      spinDisabled,
+      hubLabel: s.spinning ? '…' : 'DREHEN',
+      hubBg: spinDisabled ? '#9aa7ab' : '#c0392b',
+      hubCursor: spinDisabled ? 'default' : 'pointer',
+
+      soundOn: s.soundOn,
+      soundLabel: s.soundOn ? '♪  Ton an' : '✕  Ton aus',
+      onToggleSound: () => this.setState(st => ({ soundOn: !st.soundOn })),
+
+      historyView: s.log.slice(0, 8).map((h, i) => ({ label: h.label, color: h.color, emoji: h.emoji || this.getEmoji(h.label), num: '#' + (s.log.length - i) })),
+      hasHistory: s.log.length > 0,
+      noHistory: s.log.length === 0,
+
+      onOpenShare: () => this.setState({ showShare: true }),
+      onCloseShare: () => this.setState({ showShare: false, copied: false }),
+      showShare: s.showShare,
+      qrDataUrl: s.qrDataUrl,
+      hasQr: !!s.qrDataUrl,
+      noQr: !s.qrDataUrl,
+      shareUrl: s.shareUrl || (window.location ? window.location.href : ''),
+      copyLabel: s.copied ? '✓ Link kopiert!' : 'Link kopieren',
+      onCopyLink: () => {
+        const u = s.shareUrl || window.location.href;
+        try { navigator.clipboard.writeText(u); } catch (e) {}
+        this.setState({ copied: true });
+        clearTimeout(this._copyT);
+        this._copyT = setTimeout(() => this.setState({ copied: false }), 1800);
+      },
+
+      onOpenAdmin: () => this.setState({ showAdmin: true }),
+      onCloseAdmin: () => this.setState({ showAdmin: false }),
+      showAdmin: s.showAdmin,
+      adminCount: s.log.length,
+      adminBadge: s.log.length ? ' · ' + s.log.length : '',
+      hasLog: s.log.length > 0,
+      noLog: s.log.length === 0,
+      logView: s.log.map(r => ({
+        question: r.question || '(ohne Frage)',
+        label: r.label,
+        color: r.color,
+        emoji: r.emoji || this.getEmoji(r.label),
+        when: this.formatWhen(r.ts),
+      })),
+      onClearLog: () => { if (this.online) { this.clearResultsRemote(); } else { this.saveLog([]); this.setState({ log: [] }); } },
+
+      showResult: s.showResult,
+      result: s.result,
+      resultLabel: s.result ? s.result.label : '',
+      resultEmoji: s.result ? (s.result.emoji || this.getEmoji(s.result.label)) : '',
+      resultColor: s.result ? s.result.color : '#ccc',
+      resultQuestion: s.resultQuestion,
+      onCloseResult: () => this.setState({ showResult: false }),
+      onSpinAgain: () => { this.setState({ showResult: false }); setTimeout(() => this.spin(), 250); },
+      stop: (e) => e.stopPropagation(),
+    };
+  }
+
+  formatWhen(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} · ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  buildLabels(segs) {
+    const R = React.createElement;
+    if (!segs.length) return null;
+    return R('g', { key: 'labels' }, segs.map(seg => R('g', { key: seg.id }, [
+      R('text', {
+        key: 'e',
+        x: seg.lx, y: seg.ly - 13,
+        transform: seg.labelTransform,
+        textAnchor: 'middle', dominantBaseline: 'central',
+        style: { fontSize: '24px' },
+      }, seg.emoji),
+      R('text', {
+        key: 'l',
+        x: seg.lx, y: seg.ly + 12,
+        transform: seg.labelTransform,
+        textAnchor: 'middle', dominantBaseline: 'central',
+        fill: '#fff', stroke: 'rgba(0,0,0,.4)', strokeWidth: 3.5, paintOrder: 'stroke',
+        style: { fontFamily: 'Nunito, sans-serif', fontWeight: 900, fontSize: '16px' },
+      }, seg.label),
+    ])));
+  }
+  buildBezel() {
+    const R = React.createElement;
+    const twinkle = this.props.bulbTwinkle !== false;
+    const els = [
+      R('circle', { key: 'rim', cx: 260, cy: 260, r: 258, fill: '#7c4a12' }),
+      R('circle', { key: 'gold', cx: 260, cy: 260, r: 251, fill: '#f0b53c' }),
+      R('circle', { key: 'goldedge', cx: 260, cy: 260, r: 249, fill: 'none', stroke: '#c8881f', strokeWidth: 2 }),
+      R('circle', { key: 'inneredge', cx: 260, cy: 260, r: 226, fill: 'none', stroke: '#c8881f', strokeWidth: 2 }),
+    ];
+    const n = 20;
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * 360 * Math.PI / 180;
+      const cx = 260 + 238 * Math.sin(ang);
+      const cy = 260 - 238 * Math.cos(ang);
+      const amber = i % 2 === 0;
+      els.push(R('circle', {
+        key: 'b' + i, cx, cy, r: 6.5,
+        fill: amber ? '#fff3c4' : '#ffd23f',
+        stroke: 'rgba(120,70,10,.45)', strokeWidth: 1,
+        style: twinkle ? { animation: `twinkle 1.4s ease-in-out ${(i % 2) * 0.7}s infinite` } : undefined,
+      }));
+    }
+    return R('svg', {
+      width: 520, height: 520, viewBox: '0 0 520 520',
+      style: { position: 'absolute', inset: 0, filter: 'drop-shadow(0 12px 26px rgba(0,0,0,.5))' },
+    }, els);
+  }
+}
+</script>
+</body>
+</html>
