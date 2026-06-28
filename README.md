@@ -7,7 +7,6 @@ entsprechend größeres Tortenstück – das Rad entscheidet fair nach Anteilen.
 Mit optionalem **Live-Voting über Supabase**: Alle im selben Raum sehen
 Optionen, Stimmen und das Dreh-Ergebnis in Echtzeit.
 
-![Glücksrad](screenshots/hero.png)
 
 ---
 
